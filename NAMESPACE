@@ -1,0 +1,3 @@
+useDynLib(Haproxy)
+exportPattern("^[[:alpha:]]+")
+importFrom(Rcpp, evalCpp)

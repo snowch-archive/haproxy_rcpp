@@ -1,0 +1,11 @@
+Package: Haproxy
+Type: Package
+Title: Read Haproxy raw log files
+Version: 1.0
+Date: 2014-12-05
+Author: Chris Snow
+Maintainer: chsnow123@gmail.com
+Description: Read Haproxy raw log files
+License: Aapche 2.0
+Imports: Rcpp (>= 0.11.3)
+LinkingTo: Rcpp
