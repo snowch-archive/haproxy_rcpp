@@ -1,0 +1,5 @@
+Run the following commands from project's parent folder:
+* `R CMD build Haproxy` to build the package tarball.
+* `R CMD check Haproxy` to check the package tarball.
+* 'R CMD install Haproxy' to install the package tarball.
+
