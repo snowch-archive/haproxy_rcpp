@@ -247,6 +247,7 @@ DataFrame haproxy_read(String fileName) {
       i++;
     }
     
+    // see http://stackoverflow.com/q/27371543/1033422
     return ListBuilder()
       .add("clientIp", clientIp)
       .add("clientPort", clientPort)
