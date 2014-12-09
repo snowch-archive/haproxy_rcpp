@@ -152,11 +152,7 @@ void parse(string current_line, int i) {
     " \\{([^}]*)\\}"
     
     // '"' http_request '"' # E.g. "GET /index.html HTTP/1.1" 
-    //" \"([^\"]*)\""
     " \"(.*?)\""
-    
-    // discard everything else
-    //" .*$"
     );
     
   std::smatch sm;
@@ -202,7 +198,7 @@ void parse(string current_line, int i) {
 // [[Rcpp::export]]
 DataFrame haproxy_read(String fileName) {
   
-    int vsize = get_number_lines(fileName) + 1;
+    int vsize = get_number_lines(fileName);
     
     clientIp     = CharacterVector(vsize);
     clientPort   = CharacterVector(vsize);
@@ -244,8 +240,10 @@ DataFrame haproxy_read(String fileName) {
     string current_line;    
     while (!in.eof()) {
       getline(in, current_line, '\n');
-      parse(current_line, i);
-      current_line.clear(); 
+      if (current_line.length() > 0) {
+        parse(current_line, i);
+        current_line.clear(); 
+      }
       i++;
     }
     
