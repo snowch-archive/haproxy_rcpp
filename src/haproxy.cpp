@@ -7,7 +7,7 @@
 using namespace Rcpp;
 using namespace std;
 
-// TODO move this to it's own file
+// TODO move this class to it's own file
 
 class ListBuilder {
 
@@ -65,6 +65,7 @@ static IntegerVector   tw;
 static IntegerVector   tc;
 static IntegerVector   tr;
 static IntegerVector   tt;
+static IntegerVector   latency;
 static IntegerVector   statusCode;
 static IntegerVector   bytesRead;
 static CharacterVector capturedRequestCookie;
@@ -80,7 +81,18 @@ static IntegerVector   backendQueue;
 static CharacterVector capturedRequestHeaders;
 static CharacterVector capturedResponseHeaders;
 static CharacterVector httpRequest;
+// derived fields
+static CharacterVector userAgent;
+static CharacterVector httpMethod;
+static CharacterVector dbName;
+static CharacterVector requestString;
 
+/* 
+Usage:
+  fast_factor_template<INTSXP>(x);
+  fast_factor_template<REALSXP>(x);
+  fast_factor_template<STRSXP>(x);
+*/
 template <int RTYPE>
 IntegerVector fast_factor_template( const Vector<RTYPE>& x ) {
     Vector<RTYPE> levs = sort_unique(x);
@@ -202,6 +214,27 @@ void parse(string current_line, int i) {
   capturedRequestHeaders[i]  = Rcpp::String(sm[startMatchGroup++]);
   capturedResponseHeaders[i] = Rcpp::String(sm[startMatchGroup++]);
   httpRequest[i]             = Rcpp::String(sm[startMatchGroup++]);
+  
+  // Now break down some of the fields further.
+  // This could have been done via regex, but it would get messy.
+  
+  // latency
+  if (tq[i] != NULL && tt[i] != NULL) {
+    latency[i]       = tt[i] - tq[i];
+  }
+  
+  // user_agent
+  string s (capturedRequestHeaders[i]);
+  string token = s.substr(0, s.find("|"));
+  userAgent[i] = Rcpp::String(token);
+  
+  string httpRequestString (httpRequest[i]);
+  const std::regex re_req ( "(\\S*) (/([^/]*)/?\\S*) (\\S*)" );
+  std::regex_match (httpRequestString, sm, re_req);
+
+  httpMethod[i] = Rcpp::String(sm[1]);
+  requestString[i] = Rcpp::String(sm[2]);
+  dbName[i] =  Rcpp::String(sm[3]);
 }
 
 // [[Rcpp::export]]
@@ -220,6 +253,7 @@ DataFrame haproxy_read(String fileName) {
     tc           = IntegerVector(vsize);
     tr           = IntegerVector(vsize);
     tt           = IntegerVector(vsize);
+    latency      = IntegerVector(vsize);
     statusCode   = IntegerVector(vsize);
     bytesRead    = IntegerVector(vsize);
 
@@ -242,6 +276,10 @@ DataFrame haproxy_read(String fileName) {
     capturedRequestHeaders  = CharacterVector(vsize);
     capturedResponseHeaders = CharacterVector(vsize);
     httpRequest             = CharacterVector(vsize);
+    userAgent               = CharacterVector(vsize);
+    httpMethod              = CharacterVector(vsize);
+    requestString           = CharacterVector(vsize);
+    dbName                  = CharacterVector(vsize);
     
     std::ifstream in(fileName);
     
@@ -258,37 +296,42 @@ DataFrame haproxy_read(String fileName) {
         
     // Why ListBuilder? See http://stackoverflow.com/q/27371543/1033422
     return ListBuilder()
-      .add("clientIp", fast_factor_template<STRSXP>(clientIp))
-      .add("clientPort", fast_factor_template<STRSXP>(clientPort))
-      .add("acceptDate", acceptDate)
-      .add("frontendName", fast_factor_template<STRSXP>(frontendName))
-      .add("backendName", fast_factor_template<STRSXP>(backendName))
-      .add("serverName", fast_factor_template<STRSXP>(serverName))
+      .add("client_ip", fast_factor_template<STRSXP>(clientIp))
+      .add("client_port", fast_factor_template<STRSXP>(clientPort))
+      .add("accept_date", acceptDate)
+      .add("frontend_name", fast_factor_template<STRSXP>(frontendName))
+      .add("backend_name", fast_factor_template<STRSXP>(backendName))
+      .add("server_name", fast_factor_template<STRSXP>(serverName))
       .add("tq", tq)
       .add("tw", tw)
       .add("tc", tc)
       .add("tr", tr)
       .add("tt", tt)
+      .add("latency", latency)
       .add("status_code", fast_factor_template<INTSXP>(statusCode))
       .add("bytes_read", bytesRead)
       
 #if CAPTURED_REQUEST_COOKIE_FIELD == 1
-      .add("capturedRequestCookie", capturedRequestCookie)
+      .add("captured_request_cookie", capturedRequestCookie)
 #endif     
 
 #if CAPTURED_REQUEST_COOKIE_FIELD == 1
-      .add("capturedResponseCookie", capturedResponseCookie)
+      .add("captured_response_cookie", capturedResponseCookie)
 #endif    
 
-      .add("terminationState", terminationState)
+      .add("termination_state", terminationState)
       .add("actconn", actconn)
       .add("feconn", feconn)
       .add("beconn", beconn)
       .add("srv_conn", srvConn)
       .add("retries", retries)
-      .add("serverQueue", serverQueue)
-      .add("backendQueue", backendQueue)
-      .add("capturedRequestHeaders", capturedRequestHeaders)
-      .add("capturedResponseHeaders", capturedResponseHeaders)
-      .add("httpRequest", httpRequest);
+      .add("server_queue", serverQueue)
+      .add("backend_queue", backendQueue)
+      .add("captured_request_headers", capturedRequestHeaders)
+      .add("captured_response_headers", capturedResponseHeaders)
+      .add("http_request", httpRequest)
+      .add("user_agent", fast_factor_template<STRSXP>(userAgent))
+      .add("http_method", fast_factor_template<STRSXP>(httpMethod))
+      .add("request_string", fast_factor_template<STRSXP>(requestString))
+      .add("db_name", fast_factor_template<STRSXP>(dbName));
 };
