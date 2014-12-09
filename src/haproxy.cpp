@@ -81,6 +81,15 @@ static CharacterVector capturedRequestHeaders;
 static CharacterVector capturedResponseHeaders;
 static CharacterVector httpRequest;
 
+template <int RTYPE>
+IntegerVector fast_factor_template( const Vector<RTYPE>& x ) {
+    Vector<RTYPE> levs = sort_unique(x);
+    IntegerVector out = match(x, levs);
+    out.attr("levels") = as<CharacterVector>(levs);
+    out.attr("class") = "factor";
+    return out;
+}
+
 int get_number_lines(String fileName) {
   std::ifstream inFile(fileName); 
   return std::count(std::istreambuf_iterator<char>(inFile), 
@@ -246,21 +255,21 @@ DataFrame haproxy_read(String fileName) {
       }
       i++;
     }
-    
-    // see http://stackoverflow.com/q/27371543/1033422
+        
+    // Why ListBuilder? See http://stackoverflow.com/q/27371543/1033422
     return ListBuilder()
-      .add("clientIp", clientIp)
-      .add("clientPort", clientPort)
+      .add("clientIp", fast_factor_template<STRSXP>(clientIp))
+      .add("clientPort", fast_factor_template<STRSXP>(clientPort))
       .add("acceptDate", acceptDate)
-      .add("frontendName", frontendName)
-      .add("backendName", backendName)
-      .add("serverName", serverName)
+      .add("frontendName", fast_factor_template<STRSXP>(frontendName))
+      .add("backendName", fast_factor_template<STRSXP>(backendName))
+      .add("serverName", fast_factor_template<STRSXP>(serverName))
       .add("tq", tq)
       .add("tw", tw)
       .add("tc", tc)
       .add("tr", tr)
       .add("tt", tt)
-      .add("status_code", statusCode)
+      .add("status_code", fast_factor_template<INTSXP>(statusCode))
       .add("bytes_read", bytesRead)
       
 #if CAPTURED_REQUEST_COOKIE_FIELD == 1
