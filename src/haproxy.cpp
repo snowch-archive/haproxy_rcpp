@@ -7,6 +7,53 @@
 using namespace Rcpp;
 using namespace std;
 
+// TODO move this to it's own file
+
+class ListBuilder {
+
+public:
+
+   ListBuilder() {};
+   ~ListBuilder() {};
+
+   inline ListBuilder& add(std::string const& name, SEXP x) {
+      names.push_back(name);
+
+      // NOTE: we need to protect the SEXPs we pass in; there is
+      // probably a nicer way to handle this but ...
+      elements.push_back(PROTECT(x));
+
+      return *this;
+   }
+
+   inline operator List() const {
+      List result(elements.size());
+      for (size_t i = 0; i < elements.size(); ++i) {
+         result[i] = elements[i];
+      }
+      result.attr("names") = wrap(names);
+      UNPROTECT(elements.size());
+      return result;
+   }
+
+   inline operator DataFrame() const {
+      List result = static_cast<List>(*this);
+      result.attr("class") = "data.frame";
+      result.attr("row.names") = IntegerVector::create(NA_INTEGER, XLENGTH(elements[0]));
+      return result;
+   }
+
+private:
+
+   std::vector<std::string> names;
+   std::vector<SEXP> elements;
+
+   ListBuilder(ListBuilder const&) {}; // not safe to copy
+
+};
+
+// the R function code starts here
+
 static CharacterVector clientIp;
 static CharacterVector clientPort;
 static CharacterVector acceptDate;
@@ -30,6 +77,9 @@ static IntegerVector   srvConn;
 static IntegerVector   retries;
 static IntegerVector   serverQueue;
 static IntegerVector   backendQueue;
+static CharacterVector capturedRequestHeaders;
+static CharacterVector capturedResponseHeaders;
+static CharacterVector httpRequest;
 
 int get_number_lines(String fileName) {
   std::ifstream inFile(fileName); 
@@ -95,14 +145,18 @@ void parse(string current_line, int i) {
     // srv_queue '/' backend_queue # E.g. 0/0
     " (\\d*)/(\\d*)"
  
-/*
-     14   '{' captured_request_headers* '}'                   {haproxy.1wt.eu}
-     15   '{' captured_response_headers* '}'                                {}
-     16   '"' http_request '"'                      "GET /index.html HTTP/1.1"
-*/
+    // '{' captured_request_headers* '}' # E.g. {haproxy.1wt.eu}
+    " \\{([^}]*)\\}"
+    
+    // '{' captured_response_headers* '}' # E.g  {}
+    " \\{([^}]*)\\}"
+    
+    // '"' http_request '"' # E.g. "GET /index.html HTTP/1.1" 
+    //" \"([^\"]*)\""
+    " \"(.*?)\""
     
     // discard everything else
-    " .*$"
+    //" .*$"
     );
     
   std::smatch sm;
@@ -125,21 +179,24 @@ void parse(string current_line, int i) {
   bytesRead[i]       = stoi_ignore_err(sm[startMatchGroup++]);
 
 #if CAPTURED_REQUEST_COOKIE_FIELD == 1
-  capturedRequestCookie[i] = Rcpp::String(sm[startMatchGroup++]);
+  capturedRequestCookie[i]  = Rcpp::String(sm[startMatchGroup++]);
 #endif
 
 #if CAPTURED_RESPONSE_COOKIE_FIELD == 1
-  capturedResponseCookie[i] = Rcpp::String(sm[startMatchGroup++]);
+  capturedResponseCookie[i]  = Rcpp::String(sm[startMatchGroup++]);
 #endif
 
-  terminationState[i] = Rcpp::String(sm[startMatchGroup++]);
-  actconn[i]         = stoi_ignore_err(sm[startMatchGroup++]);
-  feconn[i]          = stoi_ignore_err(sm[startMatchGroup++]);
-  beconn[i]          = stoi_ignore_err(sm[startMatchGroup++]);
-  srvConn[i]         = stoi_ignore_err(sm[startMatchGroup++]);
-  retries[i]         = stoi_ignore_err(sm[startMatchGroup++]);
-  serverQueue[i]     = stoi_ignore_err(sm[startMatchGroup++]); 
-  backendQueue[i]    = stoi_ignore_err(sm[startMatchGroup++]); 
+  terminationState[i]        = Rcpp::String(sm[startMatchGroup++]);
+  actconn[i]                 = stoi_ignore_err(sm[startMatchGroup++]);
+  feconn[i]                  = stoi_ignore_err(sm[startMatchGroup++]);
+  beconn[i]                  = stoi_ignore_err(sm[startMatchGroup++]);
+  srvConn[i]                 = stoi_ignore_err(sm[startMatchGroup++]);
+  retries[i]                 = stoi_ignore_err(sm[startMatchGroup++]);
+  serverQueue[i]             = stoi_ignore_err(sm[startMatchGroup++]); 
+  backendQueue[i]            = stoi_ignore_err(sm[startMatchGroup++]);
+  capturedRequestHeaders[i]  = Rcpp::String(sm[startMatchGroup++]);
+  capturedResponseHeaders[i] = Rcpp::String(sm[startMatchGroup++]);
+  httpRequest[i]             = Rcpp::String(sm[startMatchGroup++]);
 }
 
 // [[Rcpp::export]]
@@ -162,21 +219,24 @@ DataFrame haproxy_read(String fileName) {
     bytesRead    = IntegerVector(vsize);
 
 #if CAPTURED_RESPONSE_COOKIE_FIELD == 1
-    capturedRequestCookie = CharacterVector(vsize);
+    capturedRequestCookie  = CharacterVector(vsize);
 #endif
 
 #if CAPTURED_RESPONSE_COOKIE_FIELD == 1
-    capturedResponseCookie = CharacterVector(vsize);
+    capturedResponseCookie  = CharacterVector(vsize);
 #endif
 
-    terminationState = CharacterVector(vsize);
-    actconn          = IntegerVector(vsize);
-    feconn           = IntegerVector(vsize);
-    beconn           = IntegerVector(vsize);
-    srvConn          = IntegerVector(vsize);
-    retries          = IntegerVector(vsize);
-    serverQueue      = IntegerVector(vsize);
-    backendQueue     = IntegerVector(vsize);
+    terminationState        = CharacterVector(vsize);
+    actconn                 = IntegerVector(vsize);
+    feconn                  = IntegerVector(vsize);
+    beconn                  = IntegerVector(vsize);
+    srvConn                 = IntegerVector(vsize);
+    retries                 = IntegerVector(vsize);
+    serverQueue             = IntegerVector(vsize);
+    backendQueue            = IntegerVector(vsize);
+    capturedRequestHeaders  = CharacterVector(vsize);
+    capturedResponseHeaders = CharacterVector(vsize);
+    httpRequest             = CharacterVector(vsize);
     
     std::ifstream in(fileName);
     
@@ -189,36 +249,38 @@ DataFrame haproxy_read(String fileName) {
       i++;
     }
     
-    return DataFrame::create(
-      _["clientIp"]     = clientIp,
-      _["clientPort"]   = clientPort,
-      _["acceptDate"]   = acceptDate,
-      _["frontendName"] = frontendName,
-      _["backendName"]  = backendName,
-      _["serverName"]   = serverName,
-      _["tq"]           = tq,
-      _["tw"]           = tw,
-      _["tc"]           = tc,
-      _["tr"]           = tr,
-      _["tt"]           = tt,
-      _["status_code"]  = statusCode,
-      _["bytes_read"]   = bytesRead,
+    return ListBuilder()
+      .add("clientIp", clientIp)
+      .add("clientPort", clientPort)
+      .add("acceptDate", acceptDate)
+      .add("frontendName", frontendName)
+      .add("backendName", backendName)
+      .add("serverName", serverName)
+      .add("tq", tq)
+      .add("tw", tw)
+      .add("tc", tc)
+      .add("tr", tr)
+      .add("tt", tt)
+      .add("status_code", statusCode)
+      .add("bytes_read", bytesRead)
       
 #if CAPTURED_REQUEST_COOKIE_FIELD == 1
-      _["capturedRequestCookie"]   = capturedRequestCookie,
+      .add("capturedRequestCookie", capturedRequestCookie)
 #endif     
 
 #if CAPTURED_REQUEST_COOKIE_FIELD == 1
-      _["capturedResponseCookie"]   = capturedResponseCookie,
+      .add("capturedResponseCookie", capturedResponseCookie)
 #endif    
 
-      _["terminationState"] = terminationState,
-      _["actconn"]          = actconn,
-      _["feconn"]           = feconn,
-      _["beconn"]           = beconn,
-      _["srv_conn"]         = srvConn,
-      _["retries"]          = retries,
-      _["serverQueue"]      = serverQueue /*,
-      _["backendQueue"]     = backendQueue */
-    );
-}
+      .add("terminationState", terminationState)
+      .add("actconn", actconn)
+      .add("feconn", feconn)
+      .add("beconn", beconn)
+      .add("srv_conn", srvConn)
+      .add("retries", retries)
+      .add("serverQueue", serverQueue)
+      .add("backendQueue", backendQueue)
+      .add("capturedRequestHeaders", capturedRequestHeaders)
+      .add("capturedResponseHeaders", capturedResponseHeaders)
+      .add("httpRequest", httpRequest);
+};
