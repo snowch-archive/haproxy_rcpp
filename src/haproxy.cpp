@@ -8,6 +8,7 @@ using namespace Rcpp;
 using namespace std;
 
 // TODO move this class to it's own file
+// Why ListBuilder? See http://stackoverflow.com/q/27371543/1033422
 
 class ListBuilder {
 
@@ -86,6 +87,7 @@ static CharacterVector userAgent;
 static CharacterVector httpMethod;
 static CharacterVector dbName;
 static CharacterVector requestString;
+static CharacterVector httpVersion;
 
 /* 
 Usage:
@@ -215,8 +217,8 @@ void parse(string current_line, int i) {
   capturedResponseHeaders[i] = Rcpp::String(sm[startMatchGroup++]);
   httpRequest[i]             = Rcpp::String(sm[startMatchGroup++]);
   
-  // Now break down some of the fields further.
-  // This could have been done via regex, but it would get messy.
+  // Now split some of the fields down further.
+  // This could have been done via the previous regex, but it would get messy.
   
   // latency
   if (tq[i] != NULL && tt[i] != NULL) {
@@ -229,12 +231,13 @@ void parse(string current_line, int i) {
   userAgent[i] = Rcpp::String(token);
   
   string httpRequestString (httpRequest[i]);
-  const std::regex re_req ( "(\\S*) (/([^/]*)/?\\S*) (\\S*)" );
+  const std::regex re_req ( "(\\S*) (/([^/?#]+)?\\S*) (\\S*)" );
   std::regex_match (httpRequestString, sm, re_req);
 
-  httpMethod[i] = Rcpp::String(sm[1]);
+  httpMethod[i]    = Rcpp::String(sm[1]);
   requestString[i] = Rcpp::String(sm[2]);
-  dbName[i] =  Rcpp::String(sm[3]);
+  dbName[i]        = Rcpp::String(sm[3]);
+  httpVersion[i]   = Rcpp::String(sm[4]);
 }
 
 // [[Rcpp::export]]
@@ -280,6 +283,7 @@ DataFrame haproxy_read(String fileName) {
     httpMethod              = CharacterVector(vsize);
     requestString           = CharacterVector(vsize);
     dbName                  = CharacterVector(vsize);
+    httpVersion             = CharacterVector(vsize);
     
     std::ifstream in(fileName);
     
@@ -333,5 +337,7 @@ DataFrame haproxy_read(String fileName) {
       .add("user_agent", fast_factor_template<STRSXP>(userAgent))
       .add("http_method", fast_factor_template<STRSXP>(httpMethod))
       .add("request_string", fast_factor_template<STRSXP>(requestString))
-      .add("db_name", fast_factor_template<STRSXP>(dbName));
+      .add("db_name", fast_factor_template<STRSXP>(dbName))
+      .add("http_version", fast_factor_template<STRSXP>(httpVersion))
+      ;
 };
